@@ -1,0 +1,1 @@
+ALTER TABLE `claims` ADD `transitionToken` text DEFAULT '' NOT NULL;
