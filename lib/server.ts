@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
-import { seedReports } from "./seed";
-import { personas } from "./domain";
+import type { Profile } from "./domain";
 export class AppError extends Error {
   constructor(
     message: string,
@@ -31,16 +30,20 @@ export const rows = async <T>(sql: string, ...args: unknown[]) =>
   (await stmt(sql, ...args).all<T>()).results;
 export const one = async <T>(sql: string, ...args: unknown[]) =>
   stmt(sql, ...args).first<T>();
-export async function identity(request: Request) {
+export async function identity(_request: Request) {
   const user = await getChatGPTUser();
   if (!user)
-    throw new AppError("Sign in to open your private hackathon demo.", 401);
-  const requested =
-    request.headers
-      .get("cookie")
-      ?.match(/(?:^|;\s*)vitfind-persona=([^;]+)/)?.[1] ?? "aarav";
-  const actor = personas.some((p) => p.id === requested) ? requested : "aarav";
-  return { scope: user.userId, actor };
+    throw new AppError("Sign in to continue to VITFind.", 401);
+  // The dispatcher verifies identity and the Site's viewer access policy.
+  // Old per-user demo scopes are deliberately not copied into this shared board.
+  const scope = "vitfind-campus-live-v1";
+  let profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", user.userId);
+  if (!profile) {
+    await stmt("INSERT OR IGNORE INTO profiles (id,name,createdAt,updatedAt) VALUES (?,?,?,?)", user.userId, (user.fullName?.trim() || "Campus member").slice(0,60), Date.now(), Date.now()).run();
+    profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", user.userId);
+  }
+  if (!profile) throw new AppError("Your account could not be loaded. Please retry.", 503);
+  return { scope, actor: user.userId, profile: { ...profile, email: user.email }, isModerator: profile.role === "moderator" };
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");
@@ -64,35 +67,6 @@ export function failure(error: unknown) {
 }
 export const ok = (data: unknown) =>
   Response.json(data, { headers: { "Cache-Control": "no-store" } });
-export async function seed(scope: string) {
-  if (await one("SELECT scope FROM spaces WHERE scope = ?", scope)) return;
-  const insert = seedReports().map((r) =>
-    stmt(
-      "INSERT OR IGNORE INTO reports (scope,id,owner,type,title,description,category,location,color,date,image,status,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      scope,
-      r.id,
-      r.owner,
-      r.type,
-      r.title,
-      r.description,
-      r.category,
-      r.location,
-      r.color,
-      r.date,
-      r.image,
-      r.status,
-      r.createdAt,
-    ),
-  );
-  await db().batch([
-    ...insert,
-    stmt(
-      "INSERT OR IGNORE INTO spaces (scope,createdAt) VALUES (?,?)",
-      scope,
-      Date.now(),
-    ),
-  ]);
-}
 export const log = (
   scope: string,
   actor: string,

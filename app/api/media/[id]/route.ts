@@ -10,7 +10,7 @@ export async function GET(
   },
 ) {
   try {
-    const { scope, actor } = await identity(request);
+    const { scope, actor, isModerator } = await identity(request);
     const { id } = await params;
     if (!/^[a-f0-9-]{36}$/.test(id))
       throw new AppError("Photo unavailable.", 404);
@@ -20,7 +20,8 @@ export async function GET(
     if (!upload) throw new AppError("Photo unavailable.", 404);
     if (
       upload.actor !== actor &&
-      actor !== "staff" &&
+      !isModerator &&
+      !(await one("SELECT id FROM profiles WHERE avatar=?", "/api/media/" + id)) &&
       !(await one(
         "SELECT id FROM reports WHERE scope=? AND image=? AND status!='hidden'",
         scope,
@@ -34,7 +35,7 @@ export async function GET(
       headers: {
         "Content-Type": "image/jpeg",
         "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private,max-age=60",
+        "Cache-Control": "private,no-store",
         "Content-Security-Policy": "default-src 'none'; sandbox",
       },
     });

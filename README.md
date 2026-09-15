@@ -1,6 +1,6 @@
 # VITFind
 
-Server-backed, mobile-friendly campus lost-and-found hackathon app. Start with [the demo guide and production roadmap](HACKATHON.md). Sample identities and matching are intentionally labelled as demo integrations; this build has not been certified for 50,000 users.
+Server-backed, mobile-friendly campus lost-and-found app with authenticated accounts, editable profiles, private claims and finder-managed handover. Start with [the app guide](APP_GUIDE.md). This build has not been load-tested for 50,000 users. HACKATHON.md documents the superseded first version and is retained only as project history.
 
 Run matching regression tests with `node --test tests/domain.test.mjs`. The development/runtime instructions below document the foundation used by this app.
 

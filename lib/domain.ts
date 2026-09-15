@@ -20,11 +20,16 @@ export const locations = [
   "Women’s Hostel",
   "Other",
 ];
-export const personas = [
-  { id: "aarav", name: "Aarav Sharma", initials: "AS", role: "Student" },
-  { id: "meera", name: "Meera Nair", initials: "MN", role: "Student" },
-  { id: "staff", name: "Campus Help Desk", initials: "HD", role: "Staff" },
-];
+export type Profile = {
+  id: string;
+  name: string;
+  avatar: string;
+  course: string;
+  year: string;
+  bio: string;
+  role: "member" | "moderator";
+};
+export const initialsOf = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "V";
 export type Report = {
   id: string;
   owner: string;
@@ -71,7 +76,8 @@ export type Audit = {
   createdAt: number;
 };
 export type AppState = {
-  persona: string;
+  user: Profile & { email: string };
+  members: Pick<Profile, "id" | "name" | "avatar">[];
   reports: Report[];
   claims: Claim[];
   messages: Message[];
@@ -84,8 +90,6 @@ export type AppState = {
     claims: number;
   };
 };
-export const nameOf = (id: string) =>
-  personas.find((p) => p.id === id)?.name ?? "Campus member";
 export const dateLabel = (time: number) =>
   new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(
     time,

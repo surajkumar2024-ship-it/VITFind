@@ -95,14 +95,15 @@ import { toast } from "sonner";
 import {
   categories,
   locations,
-  personas,
-  nameOf,
+  initialsOf,
+  type Profile,
   dateLabel,
   findMatches,
   type Report,
   type AppState,
   type Claim,
 } from "@/lib/domain";
+import AccountProfile from "@/components/account-profile";
 const nav = [
   { id: "explore", label: "Explore", icon: Compass },
   { id: "matches", label: "Matches", icon: Sparkles },
@@ -132,8 +133,8 @@ const viewTitles: Record<string, [string, string]> = {
     "Work out the details of a safe return.",
   ],
   desk: [
-    "A little help goes a long way.",
-    "Review claims, protect the community, and confirm returns.",
+    "Incoming claims.",
+    "Review ownership details for items you found and arrange a safe return.",
   ],
 };
 function Choice({
@@ -220,14 +221,14 @@ function SideNavigation({
   go,
   onHelp,
   onProfile,
-  persona,
+  account,
   matches,
 }: {
   view: string;
   go: (v: string) => void;
   onHelp: () => void;
   onProfile: () => void;
-  persona: (typeof personas)[number];
+  account: Profile & { initials: string };
   matches: number;
 }) {
   const { setOpenMobile } = useSidebar();
@@ -284,16 +285,16 @@ function SideNavigation({
       <SidebarFooter>
         <SidebarMenuButton
           className={view === "desk" ? "nav-active" : ""}
-          onClick={() => (persona.id === "staff" ? move("desk") : onHelp())}
+          onClick={() => move("desk")}
         >
           <ShieldCheck />
-          <span>Campus help desk</span>
+          <span>Incoming claims</span>
         </SidebarMenuButton>
-        <button className="profile" onClick={onProfile}>
-          <span className="avatar">{persona.initials}</span>
+        <button className="profile" onClick={onProfile} disabled={!account.id}>
+          <span className="avatar">{account.avatar ? <img src={account.avatar} alt="" /> : account.initials}</span>
           <div>
-            {persona.name}
-            <small>Demo {persona.role.toLowerCase()}</small>
+            {account.name}
+            <small>{account.role === "moderator" ? "Moderator" : "Campus member"}</small>
           </div>
           <ChevronDown size={15} />
         </button>
@@ -301,7 +302,7 @@ function SideNavigation({
     </Sidebar>
   );
 }
-export default function Workspace() {
+export default function Workspace({ signInPath, signOutPath }: { signInPath: string; signOutPath: string }) {
   const [data, setData] = useState<AppState | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -343,6 +344,7 @@ export default function Workspace() {
       const result = (await r.json()) as AppState & { error: string };
       if (gen !== generation.current || sequence !== requestSequence.current) return;
       if (!r.ok) {
+        if (r.status === 401) { setData(null); setSelected(null); setActiveChat(null); setMessage(""); setClaimFor(null); setFlagFor(null); setHandover(null); setProfileOpen(false); setNoticesOpen(false); setReportOpen(false); setEditReport(null); }
         setUnauthorized(r.status === 401);
         throw Error(result.error);
       }
@@ -379,7 +381,7 @@ export default function Workspace() {
   }, [query, type, category, location, status, view, sort]);
   useEffect(() => {
     setMessage("");
-  }, [activeChat, data?.persona]);
+  }, [activeChat, data?.user.id]);
   async function action(payload: Record<string, unknown>, success?: string) {
     if (inFlight.current) return false;
     inFlight.current = true;
@@ -396,7 +398,7 @@ export default function Workspace() {
         id?: string;
         ok?: boolean;
       };
-      if (!r.ok) throw Error(result.error);
+      if (!r.ok) { if (r.status === 401) await load(); throw Error(result.error); }
       await load();
       if (success) toast.success(success);
       return result;
@@ -449,22 +451,25 @@ export default function Workspace() {
     setPrefill(options);
     setReportOpen(true);
   }
-  const persona = personas.find((p) => p.id === data?.persona) ?? personas[0];
+  const account = { ...(data?.user ?? { id:"", name:"Your profile", avatar:"", course:"", year:"", bio:"", email:"", role:"member" as const }), initials:initialsOf(data?.user.name ?? "VITFind") };
+  const isModerator = account.role === "moderator";
+  const nameOf = (id:string) => data?.members.find(p=>p.id===id)?.name ?? "Campus member";
   const all = data?.reports ?? [];
   const selectedReport = all.find((r) => r.id === selected);
-  const myReports = all.filter((r) => r.owner === persona.id);
+  const myReports = all.filter((r) => r.owner === account.id);
   const matches = myReports
     .filter((r) => r.status === "open" && r.type === "lost")
     .flatMap((r) => findMatches(r, all).map((m) => ({ ...m, source: r })));
   const unread = data?.notifications.filter((n) => !n.read).length ?? 0;
-  const myClaims = data?.claims.filter((c) => c.claimant === persona.id) ?? [];
+  const myClaims = data?.claims.filter((c) => c.claimant === account.id) ?? [];
+  const reviewClaims = data?.claims.filter(c => c.claimant !== account.id && (isModerator || all.some(r=>r.id===c.reportId && r.owner===account.id))) ?? [];
   const currentChat = data?.claims.find((c) => c.id === activeChat);
   const title = viewTitles[view] ?? viewTitles.explore;
   const filtered = all
     .filter(
       (r) =>
         (view !== "saved" || data?.saved.includes(r.id)) &&
-        (view !== "reports" || r.owner === persona.id) &&
+        (view !== "reports" || r.owner === account.id) &&
         (status === "All statuses"
           ? r.status !== "hidden" || view === "reports"
           : status === "Reunited"
@@ -602,7 +607,7 @@ export default function Workspace() {
           <div className="collection-code">
             <LockKeyhole size={21} />
             <div>
-              Show this at the help desk<strong>{c.code}</strong>
+              Show this to the finder<strong>{c.code}</strong>
               <small>Share only when you collect your item.</small>
             </div>
           </div>
@@ -620,12 +625,13 @@ export default function Workspace() {
       </div>
     );
   }
+  if (unauthorized && !data) return <main className="auth-page"><section className="auth-card"><a className="brand" href="/"><span className="brand-mark"><Search /></span>VIT<span>Find</span></a><span className="auth-symbol"><LockKeyhole size={32}/></span><h1>Welcome to your campus community.</h1><p>Sign in to report lost belongings, connect with finders and manage your profile.</p><a className="primary full" href={signInPath} target="_top">Sign in with ChatGPT <ArrowUpRight size={18}/></a><small>No separate password to remember. Your email is never shown on the board.</small></section></main>;
   return (
     <SidebarProvider>
       <SideNavigation
         view={view}
         go={go}
-        persona={persona}
+        account={account}
         matches={matches.length}
         onHelp={() => setInfo(true)}
         onProfile={() => setProfileOpen(true)}
@@ -637,9 +643,6 @@ export default function Workspace() {
             <span>Campus lost & found</span>
           </div>
           <div className="topbar-right">
-            <button className="demo-badge" onClick={() => setProfileOpen(true)}>
-              HACKATHON DEMO
-            </button>
             <button
               className="icon-btn"
               aria-label="Notifications"
@@ -650,10 +653,11 @@ export default function Workspace() {
             </button>
             <button
               className="avatar small profile-top"
-              aria-label="Switch demo account"
+              aria-label="My profile"
+              disabled={!data || loading}
               onClick={() => setProfileOpen(true)}
             >
-              {persona.initials}
+              {account.avatar ? <img src={account.avatar} alt="" /> : account.initials}
             </button>
           </div>
         </header>
@@ -681,10 +685,10 @@ export default function Workspace() {
                 {unauthorized ? (
                   <a
                     className="primary"
-                    href="/signin-with-chatgpt?return_to=/"
+                    href={signInPath}
                     target="_top"
                   >
-                    Open my private demo
+                    Sign in with ChatGPT
                   </a>
                 ) : (
                   <button className="secondary" onClick={() => void load()}>
@@ -736,7 +740,7 @@ export default function Workspace() {
                             Good things find their way back.
                             <small>
                               {data.stats.returned > 0
-                                ? `${data.stats.returned} item${data.stats.returned === 1 ? "" : "s"} reunited on your demo board.`
+                                ? `${data.stats.returned} item${data.stats.returned === 1 ? "" : "s"} reunited across campus.`
                                 : "Help connect a lost item with its person."}
                             </small>
                           </p>
@@ -899,8 +903,7 @@ export default function Workspace() {
                       <Sparkles />
                       <p>
                         Suggestions use category, keywords, colour, and
-                        location. Photos are not analysed in this hackathon
-                        version.
+                        location. Photos are not analysed for matching.
                       </p>
                     </div>
                     {matches.length ? (
@@ -989,9 +992,9 @@ export default function Workspace() {
                               </strong>
                               <p>
                                 {nameOf(
-                                  persona.id === c.claimant
+                                  account.id === c.claimant
                                     ? (all.find((r) => r.id === c.reportId)
-                                        ?.owner ?? "staff")
+                                        ?.owner ?? "")
                                     : c.claimant,
                                 )}
                               </p>
@@ -1036,8 +1039,7 @@ export default function Workspace() {
                           </header>
                           <div className="chat-safety">
                             <ShieldCheck size={16} />
-                            Keep personal information private. Meet at the
-                            campus help desk.
+                            Keep personal information private. Meet in a safe, public place.
                           </div>
                           <div className="chat-history" aria-live="polite">
                             {data.messages
@@ -1046,7 +1048,7 @@ export default function Workspace() {
                                 <div
                                   className={
                                     "message " +
-                                    (m.sender === persona.id ? "mine" : "")
+                                    (m.sender === account.id ? "mine" : "")
                                   }
                                   key={m.id}
                                 >
@@ -1065,7 +1067,7 @@ export default function Workspace() {
                             ) && (
                               <Blank
                                 title="Say hello."
-                                description="Ask about your item or arrange a visit to the help desk."
+                                description="Ask about your item or arrange collection in a public place."
                               />
                             )}
                           </div>
@@ -1123,28 +1125,14 @@ export default function Workspace() {
                     </section>
                   </div>
                 )}
-                {view === "desk" &&
-                  (persona.id !== "staff" ? (
-                    <Blank
-                      title="The campus help desk"
-                      description="Switch to the Campus Help Desk demo account to review claims and demonstrate handovers."
-                      action={
-                        <button
-                          className="primary"
-                          onClick={() => setProfileOpen(true)}
-                        >
-                          Switch demo account
-                        </button>
-                      }
-                    />
-                  ) : (
+                {view === "desk" && (
                     <>
                       <div className="stats-grid">
                         {[
                           [Package, data.stats.open, "Open reports"],
                           [
                             ShieldCheck,
-                            data.claims.filter((c) => c.status === "pending")
+                            reviewClaims.filter((c) => c.status === "pending")
                               .length,
                             "Awaiting review",
                           ],
@@ -1170,7 +1158,7 @@ export default function Workspace() {
                           <h2>Ownership reviews</h2>
                           <span className="muted">Proof stays private</span>
                         </div>
-                        {data.claims.length ? (
+                        {reviewClaims.length ? (
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -1181,7 +1169,7 @@ export default function Workspace() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {data.claims.map((c) => (
+                              {reviewClaims.map((c) => (
                                 <TableRow key={c.id}>
                                   <TableCell>
                                     <button
@@ -1269,7 +1257,7 @@ export default function Workspace() {
                           />
                         )}
                       </section>
-                      <section className="desk-panel">
+                      {isModerator && <section className="desk-panel">
                         <h2>Community moderation</h2>
                         <p className="muted mb-4">
                           Flagged reports appear in notifications. Hide
@@ -1309,8 +1297,8 @@ export default function Workspace() {
                             </div>
                           ))}
                         </div>
-                      </section>
-                      <section className="desk-panel">
+                      </section>}
+                      {isModerator && <section className="desk-panel">
                         <h2>Activity log</h2>
                         {data.audit.length ? (
                           data.audit.map((a) => (
@@ -1326,12 +1314,12 @@ export default function Workspace() {
                           ))
                         ) : (
                           <p className="muted mt-3">
-                            Actions will be recorded here as you use the demo.
+                            Moderation and handover actions are recorded here.
                           </p>
                         )}
-                      </section>
+                      </section>}
                     </>
-                  ))}
+                  )}
               </>
             )
           )}
@@ -1395,21 +1383,18 @@ export default function Workspace() {
                 </p>
                 <div className="detail-owner">
                   <span className="avatar">
-                    {
-                      personas.find((p) => p.id === selectedReport.owner)
-                        ?.initials
-                    }
+                    {initialsOf(nameOf(selectedReport.owner))}
                   </span>
                   <div>
                     Reported by {nameOf(selectedReport.owner)}
-                    <small>Sample campus identity</small>
+                    <small>Campus member</small>
                   </div>
                 </div>
                 <div className="info-strip">
                   <ShieldCheck />
                   <p>
                     For a safe return, confirm a detail only the owner would
-                    know. Collect at the campus help desk.
+                    know. Arrange collection in a safe, public place.
                   </p>
                 </div>
                 {selectedReport.status === "returned" ? (
@@ -1419,9 +1404,9 @@ export default function Workspace() {
                   </div>
                 ) : selectedReport.status === "hidden" ? (
                   <p className="muted">
-                    This report is hidden by the help desk.
+                    This report is hidden by a moderator.
                   </p>
-                ) : selectedReport.owner === persona.id ? (
+                ) : selectedReport.owner === account.id ? (
                   <button
                     className="primary full"
                     onClick={() => {
@@ -1432,14 +1417,13 @@ export default function Workspace() {
                   >
                     Edit my report
                   </button>
-                ) : selectedReport.type === "found" &&
-                  persona.id !== "staff" ? (
+                ) : selectedReport.type === "found" ? (
                   <button
                     className="primary full"
                     disabled={data?.claims.some(
                       (c) =>
                         c.reportId === selectedReport.id &&
-                        c.claimant === persona.id,
+                        c.claimant === account.id,
                     )}
                     onClick={() => {
                       claimKey.current = crypto.randomUUID();
@@ -1451,7 +1435,7 @@ export default function Workspace() {
                     {data?.claims.some(
                       (c) =>
                         c.reportId === selectedReport.id &&
-                        c.claimant === persona.id,
+                        c.claimant === account.id,
                     )
                       ? "Claim already submitted"
                       : "This might be mine"}
@@ -1559,7 +1543,7 @@ export default function Workspace() {
             <DialogTitle>Let’s make sure it’s yours.</DialogTitle>
             <DialogDescription>
               Describe a unique detail of {claimFor?.title.toLowerCase()}. This
-              is visible only to the finder and help desk.
+              is visible only to the finder and authorized moderators.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1573,7 +1557,7 @@ export default function Workspace() {
                     reportId: claimFor?.id,
                     proof: claimProof,
                   },
-                  "Claim sent to the help desk",
+                  "Claim sent to the finder",
                 )
               ) {
                 setClaimFor(null);
@@ -1642,7 +1626,8 @@ export default function Workspace() {
                 key={n.id}
                 onClick={() => {
                   setNoticesOpen(false);
-                  if (data.claims.some((c) => c.reportId === n.reportId && c.claimant === persona.id && c.status === "approved")) go("reports");
+                  if (data.claims.some((c) => c.reportId === n.reportId && c.claimant === account.id && c.status === "approved")) go("reports");
+                  else if (all.some(r=>r.id===n.reportId && r.owner===account.id) && data.claims.some(c=>c.reportId===n.reportId)) go("desk");
                   else openItem(n.reportId);
                   void action({ action: "read-notifications" });
                 }}
@@ -1665,69 +1650,7 @@ export default function Workspace() {
           )}
         </SheetContent>
       </Sheet>
-      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
-        <DialogContent className="app-dialog">
-          <DialogHeader>
-            <DialogTitle>Your hackathon demo</DialogTitle>
-            <DialogDescription>
-              Switch sample identities to show both sides of a reunion. Your
-              demo board is private to your signed-in account.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="persona-list">
-            {personas.map((p) => (
-              <button
-                disabled={busy}
-                key={p.id}
-                className={persona.id === p.id ? "selected" : ""}
-                onClick={async () => {
-                  generation.current++;
-                  setData(null);
-                  setLoading(true);
-                  const result = await action({
-                    action: "persona",
-                    persona: p.id,
-                  });
-                  if (result) {
-                    setProfileOpen(false);
-                    go(p.id === "staff" ? "desk" : "explore");
-                  } else {
-                    await load();
-                  }
-                }}
-              >
-                <span className="avatar">{p.initials}</span>
-                <div>
-                  <strong>{p.name}</strong>
-                  <small>{p.role}</small>
-                </div>
-                {persona.id === p.id ? (
-                  <Check size={20} />
-                ) : (
-                  <ChevronRight size={18} />
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="info-strip">
-            <Info />
-            <p>
-              These are sample identities. VIT SSO and real student verification
-              are not connected. Use sample data for your presentation.
-            </p>
-          </div>
-          <button
-            className="secondary full"
-            onClick={() => {
-              setProfileOpen(false);
-              setInfo(true);
-            }}
-          >
-            <BookOpen size={17} />
-            Demo guide & about
-          </button>
-        </DialogContent>
-      </Dialog>
+      {data && <AccountProfile open={profileOpen} onOpenChange={setProfileOpen} profile={data.user} busy={busy} signOutPath={signOutPath} save={async(profile)=>!!(await action({action:"profile",profile},"Profile updated"))} />}
       <Dialog open={info} onOpenChange={setInfo}>
         <DialogContent className="app-dialog about-dialog">
           <DialogHeader>
@@ -1762,27 +1685,13 @@ export default function Workspace() {
               <div>
                 <strong>Bring it home safely.</strong>
                 <p>
-                  The help desk reviews the claim. Show your collection code
+                  The finder reviews your private proof. Show your collection code
                   when picking up your item.
                 </p>
               </div>
             </li>
           </ol>
-          <div className="demo-guide">
-            <h3>Try the 3-minute demo</h3>
-            <p>
-              As Aarav, open Matches and claim the water bottle. Describe its
-              unique sticker. Send a message, then switch to Campus Help Desk to
-              approve the claim. Switch back to Aarav to see the collection
-              code. Enter it at the help desk to complete the handover.
-            </p>
-          </div>
-          <p className="muted">
-            Reports and conversations persist on the server. Suggestions
-            currently compare text and item details; image recognition, VIT SSO,
-            external push notifications, and campus-scale load validation are
-            future integrations.
-          </p>
+          <p className="muted">Your reports and conversations are saved to your account. Suggestions compare item details, not images. Names and photos are visible on reports; email addresses and ownership proof are kept private. Sign-in does not verify university enrollment.</p>
           <details className="credits">
             <summary>Sample photography & credits</summary>
             <p>
@@ -1916,8 +1825,7 @@ export default function Workspace() {
           <DialogHeader>
             <DialogTitle>Report a concern</DialogTitle>
             <DialogDescription>
-              Tell the help desk what needs attention. Your concern will be
-              reviewed.
+              Tell us what needs attention. Your concern will be recorded for moderation. Contact campus security directly for urgent safety issues.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1926,7 +1834,7 @@ export default function Workspace() {
               if (
                 await action(
                   { action: "flag", reportId: flagFor, reason: flagReason },
-                  "Your concern was sent to the help desk",
+                  "Your concern has been recorded",
                 )
               )
                 setFlagFor(null);
@@ -1947,7 +1855,7 @@ export default function Workspace() {
               className="primary full"
               disabled={busy || flagReason.trim().length < 10}
             >
-              Send to help desk
+              Record concern
             </button>
           </form>
         </DialogContent>

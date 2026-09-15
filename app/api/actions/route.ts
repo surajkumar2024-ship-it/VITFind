@@ -15,7 +15,6 @@ import {
 import {
   categories,
   locations,
-  personas,
   type Report,
   type Claim,
 } from "@/lib/domain";
@@ -42,24 +41,18 @@ const str = (v: unknown, min = 1, max = 100) =>
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const { scope, actor } = await identity(request);
+    const { scope, actor, isModerator } = await identity(request);
     if (Number(request.headers.get("content-length") ?? 0) > 16000)
       throw new AppError("Request too large.", 413);
     const body = z.record(z.unknown()).parse(await request.json());
     const action = str(body.action);
-    if (action === "persona") {
-      const id = str(body.persona);
-      if (!personas.some((p) => p.id === id))
-        throw new AppError("Unknown demo account.");
-      return Response.json(
-        { ok: true },
-        {
-          headers: {
-            "Set-Cookie": `vitfind-persona=${id}; Path=/; SameSite=Lax; HttpOnly; Max-Age=604800${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`,
-            "Cache-Control": "no-store",
-          },
-        },
-      );
+    if (action === "profile") {
+      const p = z.object({ name:z.string().trim().min(2).max(60), course:z.string().trim().max(80), year:z.enum(["","1","2","3","4","5","6","Alumni"]), bio:z.string().trim().max(240), avatar:z.string().max(200) }).strict().parse(body.profile);
+      if (p.avatar) {
+        if (!/^\/api\/media\/[a-f0-9-]{36}$/.test(p.avatar) || !(await one("SELECT id FROM uploads WHERE scope=? AND id=? AND actor=?",scope,p.avatar.split("/").pop(),actor))) throw new AppError("Upload your own profile photo.",403);
+      }
+      await stmt("UPDATE profiles SET name=?,course=?,year=?,bio=?,avatar=?,updatedAt=? WHERE id=?",p.name,p.course,p.year,p.bio,p.avatar,Date.now(),actor).run();
+      return ok({ok:true});
     }
     if (action === "report" || action === "edit") {
       const r = reportSchema.parse(body.report);
@@ -94,7 +87,7 @@ export async function POST(request: Request) {
           )
         )
           throw new AppError(
-            "A report with claims cannot be edited. Contact the help desk.",
+            "A report with ownership claims cannot be edited. Use Messages to clarify its details.",
           );
         const result = await db().batch([
           stmt(
@@ -118,9 +111,9 @@ export async function POST(request: Request) {
       } else {
         const count = await one<{
           n: number;
-        }>("SELECT COUNT(*) n FROM reports WHERE scope=?", scope);
-        if ((count?.n ?? 0) >= 200)
-          throw new AppError("This demo board has reached its 200-item limit.");
+        }>("SELECT COUNT(*) n FROM reports WHERE scope=? AND owner=? AND createdAt>?", scope, actor, Date.now()-86400000);
+        if ((count?.n ?? 0) >= 20)
+          throw new AppError("You can publish up to 20 reports a day. Please try again tomorrow.",429);
         await db().batch([
           stmt(
             "INSERT OR IGNORE INTO reports (scope,id,owner,type,title,description,category,location,color,date,image,status,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,'open',?)",
@@ -144,9 +137,10 @@ export async function POST(request: Request) {
     }
     if (action === "read-notifications") {
       await stmt(
-        "UPDATE notifications SET read=1 WHERE scope=? AND recipient=?",
+        "UPDATE notifications SET read=1 WHERE scope=? AND (recipient=? OR (?=1 AND recipient='::moderators'))",
         scope,
         actor,
+        isModerator ? 1 : 0,
       ).run();
       return ok({ ok: true });
     }
@@ -187,9 +181,9 @@ export async function POST(request: Request) {
       );
       if (!r || r.status !== "open" || r.type !== "found")
         throw new AppError("This item is not available to claim.");
-      if (r.owner === actor || actor === "staff")
+      if (r.owner === actor)
         throw new AppError(
-          "Use the owner’s student account to claim this item.",
+          "You cannot claim an item you reported.",
         );
       if (
         await one(
@@ -225,7 +219,6 @@ export async function POST(request: Request) {
           id + "-finder",
           gate,
         ),
-        notice(scope, "staff", "Ownership review needed: " + r.title, reportId, id + "-staff", gate),
         log(scope, actor, "Submitted ownership claim", reportId, id + "-claim", gate),
       ]);
       if (!result[0].meta.changes) throw new AppError("This item was just claimed or closed. Refresh the board.", 409);
@@ -244,7 +237,7 @@ export async function POST(request: Request) {
         scope,
         claimId,
       );
-      if (!c || ![c.claimant, c.owner, "staff"].includes(actor))
+      if (!c || (![c.claimant, c.owner].includes(actor) && !isModerator))
         throw new AppError("Conversation unavailable.", 403);
       if (c.status === "rejected" || c.status === "completed")
         throw new AppError("This conversation is closed.");
@@ -275,8 +268,6 @@ export async function POST(request: Request) {
       return ok({ id });
     }
     if (action === "approve" || action === "reject" || action === "handover") {
-      if (actor !== "staff")
-        throw new AppError("This action belongs to the help desk.", 403);
       const id = str(body.claimId);
       const c = await one<Claim>(
         "SELECT * FROM claims WHERE scope=? AND id=?",
@@ -291,6 +282,8 @@ export async function POST(request: Request) {
       );
       if (!r || r.status !== "open")
         throw new AppError("This item has already been closed.", 409);
+      if ((r.owner !== actor && !isModerator) || c.claimant === actor)
+        throw new AppError("Only the finder or an authorized moderator can review this claim.",403);
       const token = crypto.randomUUID();
       const gate = { claimId: id, token };
       if (action === "handover") {
@@ -369,7 +362,7 @@ export async function POST(request: Request) {
               c.claimant,
               action === "approve"
                 ? "Claim approved! Your collection code is ready."
-                : "Your claim was not approved. Contact the help desk for support.",
+                : "The finder did not approve your ownership claim.",
               c.reportId,
               id + "-review",
               gate,
@@ -404,14 +397,14 @@ export async function POST(request: Request) {
       )
         throw new AppError("Item unavailable.", 404);
       await db().batch([
-        notice(scope, "staff", "Report flagged: " + reason, id),
+        notice(scope, "::moderators", "Report flagged: " + reason, id),
         log(scope, actor, "Flagged report: " + reason, id),
       ]);
       return ok({ ok: true });
     }
     if (action === "hide" || action === "restore") {
-      if (actor !== "staff")
-        throw new AppError("Only the help desk can moderate reports.", 403);
+      if (!isModerator)
+        throw new AppError("Only an authorized moderator can moderate reports.", 403);
       const id = str(body.reportId);
       await db().batch([
         stmt(

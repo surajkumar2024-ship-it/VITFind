@@ -7,6 +7,17 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+export const profiles = sqliteTable("profiles", {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  avatar: text().notNull().default(""),
+  course: text().notNull().default(""),
+  year: text().notNull().default(""),
+  bio: text().notNull().default(""),
+  role: text().notNull().default("member"),
+  createdAt: integer().notNull(),
+  updatedAt: integer().notNull(),
+});
 export const spaces = sqliteTable("spaces", {
   scope: text().primaryKey(),
   createdAt: integer().notNull(),

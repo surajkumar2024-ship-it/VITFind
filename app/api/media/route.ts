@@ -21,8 +21,9 @@ export async function POST(request: Request) {
     if (!(bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255))
       throw new AppError("Please upload a JPEG image.");
     const recent = await rows(
-      "SELECT id FROM uploads WHERE scope=? AND createdAt>? LIMIT 31",
+      "SELECT id FROM uploads WHERE scope=? AND actor=? AND createdAt>? LIMIT 31",
       scope,
+      actor,
       Date.now() - 3600000,
     );
     if (recent.length >= 30)
