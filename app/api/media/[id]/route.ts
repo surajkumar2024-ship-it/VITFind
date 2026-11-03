@@ -1,4 +1,5 @@
-import { identity, bucket, one, failure, AppError } from "@/lib/server";
+import { identity, one, failure, AppError } from "@/lib/server";
+import { readPhoto } from "@/lib/media-storage";
 export async function GET(
   request: Request,
   {
@@ -29,9 +30,9 @@ export async function GET(
       ))
     )
       throw new AppError("Photo unavailable.", 403);
-    const image = await bucket().get(scope + "/" + id);
+    const image = await readPhoto(scope, id);
     if (!image) throw new AppError("Photo unavailable.", 404);
-    return new Response(image.body, {
+    return new Response(image, {
       headers: {
         "Content-Type": "image/jpeg",
         "X-Content-Type-Options": "nosniff",

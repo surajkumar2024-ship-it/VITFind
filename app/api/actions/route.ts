@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   identity,
   checkOrigin,
@@ -25,6 +25,9 @@ const reportSchema = z.object({
   description: z.string().trim().min(15).max(1500),
   category: z.string().refine((v) => categories.slice(1).includes(v)),
   location: z.string().refine((v) => locations.includes(v)),
+  latitude: z.number().finite().min(-90).max(90).nullable().optional().default(null),
+  longitude: z.number().finite().min(-180).max(180).nullable().optional().default(null),
+  locationNote: z.string().trim().max(160).optional().default(""),
   color: z.string().trim().max(40),
   date: z
     .string()
@@ -35,7 +38,7 @@ const reportSchema = z.object({
         v <= new Date().toISOString().slice(0, 10),
     ),
   image: z.string().max(200).default(""),
-});
+}).refine(r => (r.latitude === null) === (r.longitude === null), {message:"Choose both latitude and longitude, or clear the map pin."});
 const str = (v: unknown, min = 1, max = 100) =>
   z.string().trim().min(min).max(max).parse(v);
 export async function POST(request: Request) {
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
           );
         const result = await db().batch([
           stmt(
-            "UPDATE reports SET title=?,description=?,category=?,location=?,color=?,date=?,image=? WHERE scope=? AND id=? AND owner=? AND status='open' AND NOT EXISTS (SELECT 1 FROM claims WHERE scope=? AND reportId=?)",
+            "UPDATE reports SET title=?,description=?,category=?,location=?,color=?,date=?,image=?,latitude=?,longitude=?,locationNote=? WHERE scope=? AND id=? AND owner=? AND status='open' AND NOT EXISTS (SELECT 1 FROM claims WHERE scope=? AND reportId=?)",
             r.title,
             r.description,
             r.category,
@@ -99,6 +102,9 @@ export async function POST(request: Request) {
             r.color,
             r.date,
             r.image,
+            r.latitude,
+            r.longitude,
+            r.locationNote,
             scope,
             r.id,
             actor,
@@ -116,7 +122,7 @@ export async function POST(request: Request) {
           throw new AppError("You can publish up to 20 reports a day. Please try again tomorrow.",429);
         await db().batch([
           stmt(
-            "INSERT OR IGNORE INTO reports (scope,id,owner,type,title,description,category,location,color,date,image,status,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,'open',?)",
+            "INSERT OR IGNORE INTO reports (scope,id,owner,type,title,description,category,location,color,date,image,latitude,longitude,locationNote,status,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",
             scope,
             r.id,
             actor,
@@ -128,6 +134,9 @@ export async function POST(request: Request) {
             r.color,
             r.date,
             r.image,
+            r.latitude,
+            r.longitude,
+            r.locationNote,
             Date.now(),
           ),
           log(scope, actor, "Created " + r.type + " report", r.id, r.id + "-created"),

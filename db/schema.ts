@@ -1,8 +1,16 @@
 import { sql } from "drizzle-orm";
+export * from "./auth-schema";
+export const localDemoSessions = sqliteTable("local_demo_sessions", {
+  tokenHash: text().primaryKey(),
+  account: text().notNull(),
+  expiresAt: integer().notNull(),
+}, t => [index("local_demo_session_expiry").on(t.expiresAt)]);
 import {
   sqliteTable,
   text,
   integer,
+  real,
+  blob,
   primaryKey,
   index,
   uniqueIndex,
@@ -33,6 +41,9 @@ export const reports = sqliteTable(
     description: text().notNull(),
     category: text().notNull(),
     location: text().notNull(),
+    latitude: real(),
+    longitude: real(),
+    locationNote: text().notNull().default(""),
     color: text().notNull(),
     date: text().notNull(),
     image: text().notNull().default(""),
@@ -133,3 +144,20 @@ export const uploads = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.scope, t.id] })],
 );
+export const imageFeatures = sqliteTable("image_features", {
+  scope: text().notNull(),
+  image: text().notNull(),
+  model: text().notNull(),
+  embedding: text().notNull(),
+  actor: text().notNull(),
+  createdAt: integer().notNull(),
+}, t => [primaryKey({ columns: [t.scope, t.image, t.model] })]);
+export const photoBudget = sqliteTable("photo_budget", {
+  id: text().primaryKey(),
+  usedBytes: integer().notNull().default(0),
+  maxBytes: integer().notNull(),
+});
+export const photoBlobs = sqliteTable("photo_blobs", {
+  scope: text().notNull(), id: text().notNull(), data: blob().notNull(),
+  byteLength: integer().notNull(), createdAt: integer().notNull(),
+}, t => [primaryKey({ columns: [t.scope, t.id] })]);

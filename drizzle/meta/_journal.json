@@ -22,6 +22,34 @@
       "when": 1789475014721,
       "tag": "0002_absent_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789494125989,
+      "tag": "0003_exotic_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791347677585,
+      "tag": "0004_robust_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792108800000,
+      "tag": "0005_image_features_and_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792627200000,
+      "tag": "0006_free_photo_storage",
+      "breakpoints": true
     }
   ]
 }

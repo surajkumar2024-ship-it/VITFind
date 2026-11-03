@@ -30,6 +30,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars*
+!.dev.vars.example
 
 # vercel
 .vercel
@@ -45,3 +47,13 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/public/vision-worker.js
+
+# Local browser captures, profiles, and server logs.
+/.presentation-chrome/
+/.presentation-edge/
+/chrome-presentation-capture/
+/chrome-presentation-capture-old/
+/chrome-profile-a/
+/edge-presentation-capture/
+/local-server*.log

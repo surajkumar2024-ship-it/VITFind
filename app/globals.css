@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "leaflet/dist/leaflet.css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 /* Real account surfaces share the campus blue-and-white palette. */
 .avatar { overflow: hidden; flex-shrink: 0; }
@@ -17,6 +18,45 @@
 .account-note small { display:block; font-size:12px; line-height:1.6; font-weight:400; color:#526889; margin-top:5px; }
 .signout-link { display:flex; justify-content:center; align-items:center; gap:8px; padding:14px; border-top:1px solid #e1e8f3; color:#b42336; font-weight:600; font-size:14px; }
 .profile-error { color:#b42336; font-size:14px; margin:10px 0; }
+.local-login { display:grid; gap:18px; }
+.location-map-block { margin:20px 0; min-width:0; }
+.map-heading,.map-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.map-heading strong,.vision-intro,.location-note { display:flex; align-items:center; gap:8px; }
+.map-help,.vision-download { font-size:13px; line-height:1.65; color:#52647e; margin:8px 0 12px; }
+.location-map { height:260px; width:100%; border:1px solid #dbe2ed; border-radius:12px; z-index:0; background:#edf2f6; }
+.location-map .leaflet-control a { color:#172d4e; }
+.map-coordinates { margin:10px 0; }
+.campus-map-pin span { display:block; width:26px; height:32px; border:3px solid white; border-radius:50% 50% 50% 0; background:#285bed; transform:rotate(-45deg); box-shadow:0 3px 8px #10274a50; }
+.campus-map-pin span:after { content:""; position:absolute; left:7px; top:7px; width:7px; height:7px; background:white; border-radius:50%; }
+.image-matching { margin:18px 0; min-width:0; }
+.vision-intro { align-items:flex-start; margin-bottom:20px; color:#285bed; }
+.vision-intro>svg { flex-shrink:0; margin-top:3px; }
+.vision-intro h3 { color:#18263b; font-size:20px; font-weight:650; }
+.vision-intro p { color:#52647e; font-size:14px; line-height:1.65; margin-top:6px; max-width:65ch; }
+.image-matching select { width:100%; min-height:44px; border:1px solid #bdcbe1; border-radius:8px; padding:10px; background:white; font:inherit; }
+.vision-source { display:flex; align-items:center; gap:14px; margin:16px 0; }
+.vision-source img { width:88px; height:88px; object-fit:cover; border-radius:10px; background:#f1f4f9; }
+.vision-source p { margin-top:5px; font-size:13px; color:#52647e; }
+.vision-status { color:#244583; font-size:14px; margin:12px 0; }
+.vision-results { display:grid; gap:12px; margin-top:20px; }
+.vision-result { display:flex; align-items:center; gap:18px; width:100%; text-align:left; padding:16px; border:1px solid #dbe2ed; border-radius:12px; background:white; }
+.vision-result:hover { border-color:#285bed; background:#f8faff; }
+.vision-result img { width:105px; height:105px; object-fit:cover; border-radius:8px; flex-shrink:0; }
+.vision-result>div { flex:1; min-width:0; }
+.vision-result h3 { font-size:17px; font-weight:650; margin:7px 0; overflow-wrap:anywhere; }
+.vision-result p { display:flex; align-items:center; gap:5px; font-size:13px; color:#52647e; flex-wrap:wrap; }
+.visual-score { font-size:12px; color:#225b45; background:#e7f5ed; padding:5px 8px; border-radius:6px; }
+.vision-empty { padding:22px 0; color:#52647e; font-size:14px; line-height:1.7; }
+.vision-empty h3 { color:#18263b; font-size:20px; margin:12px 0 6px; }
+.vision-empty .primary { margin-top:16px; }
+.photo-analysis { margin:0 0 18px; }
+.photo-analysis small { display:block; color:#52647e; font-size:12px; line-height:1.6; }
+.location-note { font-size:14px; color:#52647e; margin:10px 0; }
+@media(max-width:480px){.location-map{height:240px}.vision-result{padding:12px;gap:12px}.vision-result img{width:74px;height:85px}.vision-result>svg{display:none}.vision-result h3{font-size:15px}.vision-intro h3{font-size:18px}.visual-score{font-size:11px}.map-tools .text-button{min-height:44px}.map-coordinates{grid-template-columns:1fr 1fr!important}}
+.local-login select { width:100%; min-height:46px; border:1px solid #bdcbe1; border-radius:8px; background:#fff; padding:10px 12px; color:#172d4e; font:inherit; }
+.local-login select:focus-visible { outline:2px solid #285bed; outline-offset:3px; }
+.local-demo-notice { margin:0 0 24px; padding:12px 16px; background:#eaf0ff; border-radius:10px; color:#244583; font-size:14px; line-height:1.6; }
+.local-demo-notice strong { margin-right:8px; }
 .auth-page { min-height:100dvh; padding:24px; display:grid; place-items:center; background:#f4f7fc; }
 .auth-card { max-width:470px; width:100%; background:white; border:1px solid #dce5f3; box-shadow:0 20px 70px #1b3a7010; border-radius:22px; padding:36px; }
 .auth-card .brand { margin-bottom:36px; }
@@ -1487,6 +1527,7 @@ h1 {
   color: #7b899d;
 }
 .large-photo {
+  flex-shrink: 0;
   height: 290px;
   margin: 0 24px;
   border-radius: 12px;

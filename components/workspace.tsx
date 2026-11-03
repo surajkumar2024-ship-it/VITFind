@@ -1,4 +1,6 @@
 "use client";
+import { GoogleSignIn, LocalDemoSignIn } from "./google-account";
+import { authClient } from "@/lib/auth-client";
 import {
   useCallback,
   useEffect,
@@ -98,12 +100,15 @@ import {
   initialsOf,
   type Profile,
   dateLabel,
-  findMatches,
   type Report,
   type AppState,
   type Claim,
 } from "@/lib/domain";
 import AccountProfile from "@/components/account-profile";
+import LocationMap from "@/components/location-map";
+import ImageMatches from "@/components/image-matches";
+import { imageFeatures } from "@/lib/vision-client";
+import { compressPhoto } from "@/lib/compress-photo";
 const nav = [
   { id: "explore", label: "Explore", icon: Compass },
   { id: "matches", label: "Matches", icon: Sparkles },
@@ -302,7 +307,18 @@ function SideNavigation({
     </Sidebar>
   );
 }
-export default function Workspace({ signInPath, signOutPath }: { signInPath: string; signOutPath: string }) {
+export default function Workspace({ authReady, localDemo = false }: { authReady: boolean; localDemo?: boolean }) {
+  const [authError, setAuthError] = useState(false);
+  useEffect(() => { setAuthError(new URLSearchParams(window.location.search).has("auth_error")); }, []);
+  useEffect(() => {
+    if (!authReady || localDemo) return;
+    // HTTP responses propagate refreshed HttpOnly cookies to this browser.
+    const refresh = () => { if (document.visibilityState === "visible") void authClient.getSession().catch(() => {}); };
+    refresh();
+    const timer = setInterval(refresh, 30 * 60 * 1000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+  }, [authReady, localDemo]);
   const [data, setData] = useState<AppState | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -457,9 +473,6 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
   const all = data?.reports ?? [];
   const selectedReport = all.find((r) => r.id === selected);
   const myReports = all.filter((r) => r.owner === account.id);
-  const matches = myReports
-    .filter((r) => r.status === "open" && r.type === "lost")
-    .flatMap((r) => findMatches(r, all).map((m) => ({ ...m, source: r })));
   const unread = data?.notifications.filter((n) => !n.read).length ?? 0;
   const myClaims = data?.claims.filter((c) => c.claimant === account.id) ?? [];
   const reviewClaims = data?.claims.filter(c => c.claimant !== account.id && (isModerator || all.some(r=>r.id===c.reportId && r.owner===account.id))) ?? [];
@@ -625,14 +638,14 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
       </div>
     );
   }
-  if (unauthorized && !data) return <main className="auth-page"><section className="auth-card"><a className="brand" href="/"><span className="brand-mark"><Search /></span>VIT<span>Find</span></a><span className="auth-symbol"><LockKeyhole size={32}/></span><h1>Welcome to your campus community.</h1><p>Sign in to report lost belongings, connect with finders and manage your profile.</p><a className="primary full" href={signInPath} target="_top">Sign in with ChatGPT <ArrowUpRight size={18}/></a><small>No separate password to remember. Your email is never shown on the board.</small></section></main>;
+  if ((!authReady || unauthorized) && !data) return <main className="auth-page"><section className="auth-card"><a className="brand" href="/"><span className="brand-mark"><Search /></span>VIT<span>Find</span></a><span className="auth-symbol"><LockKeyhole size={32}/></span><h1>{localDemo ? "Try VITFind on your computer." : "Welcome to your campus community."}</h1><p>{localDemo ? "Choose a dummy account to explore reports, claims and your profile. No email or password needed." : "Sign in to report lost belongings, connect with finders and manage your profile."}</p>{localDemo ? <LocalDemoSignIn/> : <GoogleSignIn ready={authReady}/>} {!localDemo&&authError&&<p className="profile-error" role="alert">Sign-in wasn’t completed. Try again with an eligible Google account.</p>}<small>{localDemo ? "Local demo only. Changes stay on this computer. These accounts are not verified student accounts." : "No separate password to remember. Your email is private, and we don’t request access to your inbox."}</small></section></main>;
   return (
     <SidebarProvider>
       <SideNavigation
         view={view}
         go={go}
         account={account}
-        matches={matches.length}
+        matches={0}
         onHelp={() => setInfo(true)}
         onProfile={() => setProfileOpen(true)}
       />
@@ -662,6 +675,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
           </div>
         </header>
         <div className="page">
+          {localDemo && <p className="local-demo-notice"><strong>Local demo</strong> Dummy account · saved on this computer. Switch accounts by logging out from your profile.</p>}
           <div className="page-heading">
             <div>
               <div className="eyebrow">A CAMPUS THAT LOOKS OUT FOR YOU</div>
@@ -683,13 +697,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
               <div>
                 <strong>{error}</strong>
                 {unauthorized ? (
-                  <a
-                    className="primary"
-                    href={signInPath}
-                    target="_top"
-                  >
-                    Sign in with ChatGPT
-                  </a>
+                  localDemo ? <LocalDemoSignIn/> : <GoogleSignIn ready={authReady}/>
                 ) : (
                   <button className="secondary" onClick={() => void load()}>
                     Try again
@@ -898,69 +906,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
                   </>
                 )}
                 {view === "matches" && (
-                  <>
-                    <div className="info-strip">
-                      <Sparkles />
-                      <p>
-                        Suggestions use category, keywords, colour, and
-                        location. Photos are not analysed for matching.
-                      </p>
-                    </div>
-                    {matches.length ? (
-                      matches.map((m) => (
-                        <article
-                          className="match-card"
-                          key={m.source.id + "-" + m.report.id}
-                        >
-                          <div className="match-source">
-                            <span className="eyebrow">YOUR LOST ITEM</span>
-                            <h3>{m.source.title}</h3>
-                            <p>
-                              <MapPin size={14} />
-                              {m.source.location}
-                            </p>
-                          </div>
-                          <div className="match-connector">
-                            <Sparkles size={22} />
-                          </div>
-                          <button
-                            className="match-result"
-                            onClick={() => openItem(m.report.id)}
-                          >
-                            <div className="match-thumb">
-                              <Photo report={m.report} />
-                            </div>
-                            <div>
-                              <span className="pill found">Possible match</span>
-                              <h3>{m.report.title}</h3>
-                              <div className="match-reasons">
-                                {m.reasons.map((r) => (
-                                  <span key={r}>
-                                    <Check size={12} />
-                                    {r}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <ArrowUpRight />
-                          </button>
-                        </article>
-                      ))
-                    ) : (
-                      <Blank
-                        title="Your next lead starts with a report."
-                        description="Tell us what you’ve lost. We’ll look for found reports with details in common."
-                        action={
-                          <button
-                            className="primary"
-                            onClick={() => newReport({ type: "lost" })}
-                          >
-                            Report a lost item
-                          </button>
-                        }
-                      />
-                    )}
-                  </>
+                  <ImageMatches key={account.id} reports={all} actor={account.id} onOpen={openItem} onReport={()=>newReport({type:"lost"})}/>
                 )}
                 {view === "messages" && (
                   <div
@@ -1381,6 +1327,8 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
                 <p className="detail-description">
                   {selectedReport.description}
                 </p>
+                {selectedReport.locationNote&&<p className="location-note"><MapPin size={16}/>{selectedReport.locationNote}</p>}
+                {selectedReport.latitude!=null&&selectedReport.longitude!=null&&<LocationMap key={"map-"+selectedReport.id} latitude={selectedReport.latitude} longitude={selectedReport.longitude} label={`Location for ${selectedReport.title}`}/>}
                 <div className="detail-owner">
                   <span className="avatar">
                     {initialsOf(nameOf(selectedReport.owner))}
@@ -1484,23 +1432,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
                     Report a concern
                   </button>
                 </div>
-                {findMatches(selectedReport, all).length > 0 && (
-                  <div className="detail-matches">
-                    <h3>
-                      <Sparkles size={18} />
-                      Other possible connections
-                    </h3>
-                    {findMatches(selectedReport, all).map((m) => (
-                      <button
-                        key={m.report.id}
-                        onClick={() => openItem(m.report.id)}
-                      >
-                        {m.report.title}
-                        <ArrowUpRight size={16} />
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {selectedReport.status==="open"&&<ImageMatches key={"vision-"+selectedReport.id} reports={all} actor={account.id} source={selectedReport} onOpen={openItem}/>}
               </div>
             </>
           ) : (
@@ -1650,7 +1582,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
           )}
         </SheetContent>
       </Sheet>
-      {data && <AccountProfile open={profileOpen} onOpenChange={setProfileOpen} profile={data.user} busy={busy} signOutPath={signOutPath} save={async(profile)=>!!(await action({action:"profile",profile},"Profile updated"))} />}
+      {data && <AccountProfile open={profileOpen} onOpenChange={setProfileOpen} profile={data.user} busy={busy} localDemo={localDemo} save={async(profile)=>!!(await action({action:"profile",profile},"Profile updated"))} />}
       <Dialog open={info} onOpenChange={setInfo}>
         <DialogContent className="app-dialog about-dialog">
           <DialogHeader>
@@ -1691,7 +1623,7 @@ export default function Workspace({ signInPath, signOutPath }: { signInPath: str
               </div>
             </li>
           </ol>
-          <p className="muted">Your reports and conversations are saved to your account. Suggestions compare item details, not images. Names and photos are visible on reports; email addresses and ownership proof are kept private. Sign-in does not verify university enrollment.</p>
+          <p className="muted">Your reports and conversations are saved to your account. Photo comparison uses CLIP image recognition on your device; similarity is not proof of ownership. Names, item photos and selected location pins are visible on reports; email addresses and ownership proof are kept private. Sign-in does not verify university enrollment.</p>
           <details className="credits">
             <summary>Sample photography & credits</summary>
             <p>
@@ -1896,12 +1828,15 @@ function ReportForm({
   });
   const [form, setForm] = useState<Report | null>(null),
     [uploading, setUploading] = useState(false),
-    [uploadError, setUploadError] = useState("");
+    [uploadError, setUploadError] = useState(""),
+    [visionBusy,setVisionBusy]=useState(false),
+    [visionStatus,setVisionStatus]=useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (open) {
       setForm(edit ?? blank());
       setUploadError("");
+      setVisionStatus("");
     }
   }, [open, edit]);
   async function photo(file: File) {
@@ -1915,24 +1850,7 @@ function ReportForm({
     }
     setUploading(true);
     try {
-      const image = await createImageBitmap(file, {
-        imageOrientation: "from-image",
-      });
-      const scale = Math.min(1, 1400 / Math.max(image.width, image.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(image.width * scale);
-      canvas.height = Math.round(image.height * scale);
-      canvas
-        .getContext("2d")!
-        .drawImage(image, 0, 0, canvas.width, canvas.height);
-      image.close();
-      const blob = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (b) => (b ? resolve(b) : reject(Error("Couldn’t read that photo."))),
-          "image/jpeg",
-          0.82,
-        ),
-      );
+      const blob = await compressPhoto(file, 1400);
       const r = await fetch("/api/media", {
         method: "POST",
         headers: { "Content-Type": "image/jpeg" },
@@ -1959,7 +1877,7 @@ function ReportForm({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!busy && !uploading) onOpenChange(o);
+        if (!busy && !uploading && !visionBusy) onOpenChange(o);
       }}
     >
       <DialogContent className="app-dialog report-dialog">
@@ -2034,6 +1952,7 @@ function ReportForm({
                 {uploadError}
               </p>
             )}
+            {form.image&&<div className="photo-analysis"><button type="button" className="text-button" disabled={visionBusy||uploading||busy} onClick={async()=>{setVisionBusy(true);try{await imageFeatures(form.image,"report-editor",setVisionStatus,true);setVisionStatus("Photo indexed for visual matching.");}catch(e){setVisionStatus(e instanceof Error?e.message:"Photo analysis failed. You can retry in Matches.");}finally{setVisionBusy(false);}}}>{visionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}Prepare visual matching</button><small>{visionStatus||"Optional: first use downloads a vision model. You can also compare photos later in Matches."}</small></div>}
             <label className="field">
               What is the item?
               <input
@@ -2084,6 +2003,8 @@ function ReportForm({
                 />
               </label>
             </div>
+            <LocationMap latitude={form.latitude} longitude={form.longitude} onChange={point=>setForm(f=>f?{...f,latitude:point?.latitude??null,longitude:point?.longitude??null}:f)} label="Select exact item location"/>
+            <label className="field">Location details (optional)<input maxLength={160} value={form.locationNote??""} onChange={e=>field("locationNote",e.target.value)} placeholder="e.g. Library, second floor, beside the help desk"/></label>
             <label className="field">
               Description
               <textarea
@@ -2101,7 +2022,7 @@ function ReportForm({
               Don’t post identity numbers, phone numbers, or sensitive
               documents.
             </p>
-            <button className="primary full" disabled={busy || uploading}>
+            <button className="primary full" disabled={busy || uploading || visionBusy}>
               {busy ? (
                 <LoaderCircle className="spin" size={18} />
               ) : (

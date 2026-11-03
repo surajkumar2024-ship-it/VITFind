@@ -1,0 +1,17 @@
+import { pipeline, env, RawImage } from "@huggingface/transformers";
+import { resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+const root=fileURLToPath(new URL("../",import.meta.url));
+env.cacheDir=resolve(root,".sites-runtime/vision-cache");
+await mkdir(env.cacheDir,{recursive:true});
+console.log("Loading CLIP vision model. The initial download may take a few minutes.");
+const model=await pipeline("image-feature-extraction","Xenova/clip-vit-base-patch32",{revision:"d15189d7028b43f1d3e65039190477f6af591c2a",dtype:"q8",device:"cpu"});
+const bottle=await model(await RawImage.read(resolve(root,"public/images/bottle.jpg")));
+const bag=await model(await RawImage.read(resolve(root,"public/images/backpack.jpg")));
+const a=Array.from(bottle.data,Number),b=Array.from(bag.data,Number);
+const cosine=(x,y)=>x.reduce((sum,v,i)=>sum+v*y[i],0)/(Math.hypot(...x)*Math.hypot(...y));
+if(a.length!==512||b.length!==512||!a.every(Number.isFinite))throw Error("Invalid CLIP output.");
+const identical=cosine(a,a),different=cosine(a,b);
+if(identical<.999||different>=identical-.01)throw Error("Image comparison did not distinguish the test photos.");
+console.log(JSON.stringify({model:"CLIP ViT-B/32 q8",dimensions:a.length,identicalPhotoSimilarity:identical,bottleVsBagSimilarity:different,passed:true},null,2));

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * { box-sizing: border-box; }
+      html, body, iframe { margin: 0; width: 100%; height: 100%; border: 0; overflow: hidden; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <iframe id="app" title="VITFind presentation capture"></iframe>
+    <script>
+      const view = new URLSearchParams(location.search).get("view") || "dashboard";
+      const frame = document.getElementById("app");
+
+      const clickButton = (doc, label) => {
+        const button = [...doc.querySelectorAll("button")].find((item) =>
+          item.textContent.replace(/\s+/g, " ").trim().includes(label),
+        );
+        button?.click();
+      };
+
+      const setInput = (input, value) => {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        );
+        descriptor?.set?.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      const localLogin = new XMLHttpRequest();
+      localLogin.open("POST", "/api/local-session", false);
+      localLogin.setRequestHeader("Content-Type", "application/json");
+      localLogin.send(JSON.stringify({ account: "student" }));
+
+      frame.addEventListener("load", () => {
+        const doc = frame.contentDocument;
+        if (!doc || doc.body.dataset.captureReady) return;
+        doc.body.dataset.captureReady = "true";
+        setTimeout(() => {
+          if (view === "search") {
+            const input = doc.querySelector('input[aria-label="Search items"]');
+            if (input) setInput(input, "bottle");
+          }
+          if (view === "report") clickButton(doc, "Report an item");
+          if (view === "detail") clickButton(doc, "View bottle");
+          if (view === "matches") clickButton(doc, "Matches");
+          if (view === "messages") clickButton(doc, "Messages");
+          if (view === "profile") doc.querySelector('[aria-label="My profile"]')?.click();
+        }, 450);
+      });
+      frame.src = "/";
+    </script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vitfind-campus",
+  "account_id": "2cbfeae41a1a352d556da46b2f8fff09",
+  "main": "vinext/server/fetch-handler",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "vitfind-campus-free",
+    "database_id": "0af3f898-ce0f-4dd7-a90d-8ed3d78fd621",
+    "migrations_dir": "drizzle"
+  }],
+  "vars": {
+    "BETTER_AUTH_URL": "https://vitfind-campus.vitfind-campus.workers.dev",
+    "GOOGLE_CLIENT_ID": "1063110870345-p9qjvc1k7bgtblp9ccmbvj01u6iedknb.apps.googleusercontent.com",
+    "GOOGLE_ACCOUNT_POLICY": "any-google",
+    "MEDIA_STORAGE": "d1",
+    "LOCAL_DEMO_ENABLED": "false"
+  }
+}

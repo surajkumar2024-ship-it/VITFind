@@ -1,10 +1,14 @@
 # VITFind
 
+**For local use now:** double-click **Start VITFind.cmd**, open **http://127.0.0.1:5173/** and choose a dummy account. No Google setup or purchased domain is needed. See [LOCAL_DEMO.md](LOCAL_DEMO.md).
+
 Server-backed, mobile-friendly campus lost-and-found app with authenticated accounts, editable profiles, private claims and finder-managed handover. Start with [the app guide](APP_GUIDE.md). This build has not been load-tested for 50,000 users. HACKATHON.md documents the superseded first version and is retained only as project history.
 
-Run matching regression tests with `node --test tests/domain.test.mjs`. The development/runtime instructions below document the foundation used by this app.
+This checkout has migrated to **Google-only login and independent Cloudflare hosting**. Follow [STANDALONE_SETUP.md](STANDALONE_SETUP.md) for the current setup and launch process. Real Google credentials and an owned hosting account are required; the existing live Site has not been replaced by these local changes.
 
-## Runtime reference
+Run regression tests with `node --test tests/*.test.mjs`. The remaining runtime reference below is historical Sites-starter documentation, not the current deployment instructions.
+
+## Historical runtime reference — superseded
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
 
@@ -130,3 +134,18 @@ The portable build runs Vinext directly without a host `timeout` command. The ma
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+# Image comparison and exact locations
+
+The Matches screen now compares actual photos with CLIP ViT-B/32 (quantized ONNX through Transformers.js). Processing runs in a dedicated browser worker. The first use downloads approximately 90 MB of model weights, plus the inference runtime; later use benefits from the browser model cache. No photos are sent to the model provider. Your report photos remain in the app's private media store.
+
+Upload a photo and choose **Prepare visual matching**, or open **Matches**, select a lost report, and choose **Compare photos**. Each batch compares up to 24 opposite-type photos from the currently loaded board. Suggestions use cosine similarity of 512-dimensional image embeddings; the initial 0.70 threshold is heuristic and needs calibration using real campus examples. A similarity percentage is not a probability of identity or proof of ownership. Category only prioritizes the batch; it does not prevent visual comparisons across categories. Ownership claims and handover verification still apply.
+
+Feature records are saved through `/api/image-features` only for the signed-in owner's images. Feature reads are limited to reports/photos the viewer may access. They are advisory, browser-generated data. Embeddings are not included in the repeatedly polled board state. A large campus deployment should move indexing and retrieval to a trusted background inference service and a vector index; this local prototype does not claim campus-wide image-search coverage.
+
+Report forms include an OpenStreetMap/Leaflet picker. Tap the map, drag the pin, use the map centre, or enter latitude and longitude. Location permission is requested only after choosing **Use my current location**. A separate location note records the floor or landmark. Coordinates persist in D1 and appear on item details. The initial map view is VIT Vellore, not an automatically selected item location. Map tiles need an Internet connection; manual coordinate entry remains available if they fail.
+
+Google sign-in setup: create/download a **Web application** OAuth client with `http://localhost:5173/api/auth/callback/google`, then run `npm run auth:setup -- "PATH_TO_DOWNLOADED_CLIENT_JSON"`. This imports the credentials into ignored `.dev.vars` and generates an auth secret without printing it. Restart `npm run local`; configured credentials automatically select real Google authentication. Open `http://localhost:5173` for the Google flow. Until configured, local practice accounts remain available; `npm run local -- --demo` explicitly selects those practice accounts for development only.
+
+Verification: `node --test tests/*.test.mjs`, `node scripts/check-vision.mjs`, and `npm run build`. The optional `tests/browser-features.mjs` uses Playwright and installed Chrome to exercise local photo matching, map persistence, mobile layout and authorization. Set `PLAYWRIGHT_MODULE` if Playwright is installed outside its default bundled runtime location. Never include `.dev.vars` or downloaded OAuth credential JSON files in Git.
+
+For an alternate local OAuth port, pass an origin as the second setup argument: `node scripts/setup-google.mjs "PATH_TO_DOWNLOADED_CLIENT_JSON" "http://localhost:5174"`. The downloaded client's redirect URI must contain that exact origin plus `/api/auth/callback/google`. The local launcher reads this configured port. A configured Google client disables automatic practice mode; `npm run local -- --demo` remains an explicit development-only override. `node tests/browser-google-start.mjs` verifies the real Google authorization request and account sign-in page without entering a user's credentials. Completing the Google callback/session still requires a person to sign in. The browser tests accept `VITFIND_TEST_ORIGIN` for a different local test origin.

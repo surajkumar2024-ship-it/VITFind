@@ -1,0 +1,8 @@
+# Copy to .dev.vars and fill locally. Never commit .dev.vars or paste secrets in chat.
+BETTER_AUTH_URL=http://localhost:5173
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+BETTER_AUTH_SECRET=
+# any-google accepts Google accounts, including college Workspace accounts.
+# gmail-only restricts access to verified @gmail.com addresses.
+GOOGLE_ACCOUNT_POLICY=any-google

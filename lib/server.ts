@@ -1,5 +1,8 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAuth } from "./auth";
+import { admittedGoogleEmail } from "./auth-settings";
+import { getLocalDemoUser, localDemoEnabled } from "./local-demo";
+import { localDemoScope } from "./local-demo-policy";
 import type { Profile } from "./domain";
 export class AppError extends Error {
   constructor(
@@ -30,20 +33,26 @@ export const rows = async <T>(sql: string, ...args: unknown[]) =>
   (await stmt(sql, ...args).all<T>()).results;
 export const one = async <T>(sql: string, ...args: unknown[]) =>
   stmt(sql, ...args).first<T>();
-export async function identity(_request: Request) {
-  const user = await getChatGPTUser();
+export async function identity(request: Request) {
+  const localDemo = localDemoEnabled(request.url, request.headers);
+  const auth = localDemo ? null : getAuth();
+  // Refresh cookies through the auth HTTP endpoint, never silently in API reads.
+  const session = auth ? await auth.api.getSession({ headers: request.headers, query: { disableRefresh: true } }) : null;
+  const user = localDemo ? await getLocalDemoUser(request) : session?.user;
   if (!user)
     throw new AppError("Sign in to continue to VITFind.", 401);
-  // The dispatcher verifies identity and the Site's viewer access policy.
-  // Old per-user demo scopes are deliberately not copied into this shared board.
-  const scope = "vitfind-campus-live-v1";
-  let profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", user.userId);
+  if (!localDemo && !admittedGoogleEmail(user.email, session?.user.emailVerified === true, env.GOOGLE_ACCOUNT_POLICY || "any-google"))
+    throw new AppError("This Google account is not eligible for this board.", 403);
+  // Fresh identity namespace: never claim a legacy account by matching its email.
+  const actor = localDemo ? user.id : `google:${user.id}`;
+  const scope = localDemo ? localDemoScope : "vitfind-google-campus-v1";
+  let profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", actor);
   if (!profile) {
-    await stmt("INSERT OR IGNORE INTO profiles (id,name,createdAt,updatedAt) VALUES (?,?,?,?)", user.userId, (user.fullName?.trim() || "Campus member").slice(0,60), Date.now(), Date.now()).run();
-    profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", user.userId);
+    await stmt("INSERT OR IGNORE INTO profiles (id,name,createdAt,updatedAt) VALUES (?,?,?,?)", actor, (user.name?.trim() || "Campus member").slice(0,60), Date.now(), Date.now()).run();
+    profile = await one<Profile>("SELECT id,name,avatar,course,year,bio,role FROM profiles WHERE id=?", actor);
   }
   if (!profile) throw new AppError("Your account could not be loaded. Please retry.", 503);
-  return { scope, actor: user.userId, profile: { ...profile, email: user.email }, isModerator: profile.role === "moderator" };
+  return { scope, actor, profile: { ...profile, ...(localDemo ? { role: "member" as const } : {}), email: user.email }, isModerator: !localDemo && profile.role === "moderator" };
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");

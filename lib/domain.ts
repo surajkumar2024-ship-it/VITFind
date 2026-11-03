@@ -38,6 +38,9 @@ export type Report = {
   description: string;
   category: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationNote?: string;
   color: string;
   date: string;
   image: string;
@@ -135,4 +138,22 @@ export function findMatches(report: Report, reports: Report[]) {
     .filter((m) => m.score >= 6)
     .sort((a, b) => b.score - a.score)
     .slice(0, 4);
+}
+
+// Model similarity is a suggestion, never proof that two photos show the same item.
+export function cosineSimilarity(a: readonly number[], b: readonly number[]) {
+  if (a.length !== 512 || b.length !== 512) return null;
+  let dot = 0, aa = 0, bb = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (!Number.isFinite(a[i]) || !Number.isFinite(b[i])) return null;
+    dot += a[i] * b[i]; aa += a[i] ** 2; bb += b[i] ** 2;
+  }
+  return aa > 0 && bb > 0 ? Math.max(-1, Math.min(1, dot / Math.sqrt(aa * bb))) : null;
+}
+
+export function distanceMetres(a: Pick<Report, "latitude" | "longitude">, b: Pick<Report, "latitude" | "longitude">) {
+  if (a.latitude == null || a.longitude == null || b.latitude == null || b.longitude == null) return null;
+  const rad = Math.PI / 180;
+  const v = Math.sin((b.latitude-a.latitude)*rad/2)**2 + Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*Math.sin((b.longitude-a.longitude)*rad/2)**2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(v), Math.sqrt(Math.max(0, 1-v)));
 }
